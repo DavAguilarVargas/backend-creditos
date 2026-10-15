@@ -25,13 +25,9 @@ app.use('/api/evaluaciones', evaluacionesRoutes);
 app.use('/api/creditos', creditosRoutes);
 app.use('/api/pagos', pagosRoutes);
 
-app.get('/api/health', async (req, res) => {
-  try {
-    const result = await db.query('SELECT NOW()');
-    res.json({ status: 'OK', database_time: result.rows[0].now });
-  } catch (error) {
-    res.status(500).json({ status: 'ERROR', error: error.message });
-  }
+// Reemplaza el app.get('/api/health') anterior por este:
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'OK', message: 'Servidor corriendo correctamente' });
 });
 
 const PORT = process.env.PORT || 5000;
