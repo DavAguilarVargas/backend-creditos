@@ -1,17 +1,15 @@
 const { Pool } = require('pg');
 const dns = require('dns');
-require('dotenv').config();
-
-// Forzar a Node.js a resolver direcciones IPv4 primero
-dns.setDefaultResultOrder('ipv4first');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
-
-pool.on('connect', () => {
-  console.log('✅ Conectado a la base de datos de Supabase');
+  ssl: {
+    rejectUnauthorized: false
+  },
+  // Forzar al conector pg a resolver única y estrictamente IPv4 (family: 4)
+  lookup: (hostname, options, callback) => {
+    dns.lookup(hostname, { family: 4 }, callback);
+  }
 });
 
 module.exports = {
