@@ -17,7 +17,7 @@ const crearUsuario = async (req, res) => {
     const claveHash = await bcrypt.hash(clave, salt);
 
     // Insertar usando los nombres reales de la tabla Supabase: clave_hash y nombre_completo
-    const result = await pool.query(
+    const result = await db.query(
       `INSERT INTO usuario (login, clave_hash, nombre_completo, rol, activo) 
        VALUES ($1, $2, $3, $4, true) 
        RETURNING id_usuario, login, nombre_completo AS nombre, rol, activo`,
