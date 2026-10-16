@@ -17,7 +17,11 @@ const reportesRoutes = require('./modules/reportes/reportes.routes');
 
 const app = express();
 
-app.use(cors());
+// Permitir peticiones desde tu frontend en Vercel
+app.use(cors({
+  origin: '*', // O la URL de tu frontend: 'https://tu-proyecto.vercel.app'
+  credentials: true
+}));
 app.use(express.json());
 
 // Montaje de Endpoints rutas API RESTful
