@@ -1,29 +1,37 @@
-//Middleware de Autenticación
+
 const jwt = require('jsonwebtoken');
 
 const verificarToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const authHeader = req.headers.authorization;
 
-  if (!token) {
-    return res.status(401).json({ error: 'Acceso denegado. Token no proporcionado.' });
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({
+      error: 'Token de autenticación requerido',
+    });
   }
 
+  const token = authHeader.split(' ')[1];
+
   try {
-    const verificado = jwt.verify(token, process.env.JWT_SECRET || 'secreto_desarrollo');
-    req.usuario = verificado;
-    next();
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.usuario = decoded;
+    return next();
   } catch (error) {
-    res.status(403).json({ error: 'Token inválido o expirado.' });
+    return res.status(401).json({
+      error: 'Token inválido o expirado',
+    });
   }
 };
 
 const verificarRol = (rolesPermitidos) => {
   return (req, res, next) => {
     if (!req.usuario || !rolesPermitidos.includes(req.usuario.rol)) {
-      return res.status(403).json({ error: 'No tienes autorización para acceder a este recurso.' });
+      return res.status(403).json({
+        error: 'No tienes autorización para realizar esta acción',
+      });
     }
-    next();
+
+    return next();
   };
 };
 

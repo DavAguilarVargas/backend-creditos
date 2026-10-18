@@ -5,5 +5,6 @@ const { verificarToken, verificarRol } = require('../../middlewares/auth');
 
 router.post('/', verificarToken, verificarRol(['ADMIN', 'OFICIAL']), clientesController.registrarCliente);
 router.get('/', verificarToken, clientesController.obtenerClientes);
+router.put('/:id', verificarToken, verificarRol(['ADMIN', 'OFICIAL']), clientesController.actualizarCliente);
 
 module.exports = router;

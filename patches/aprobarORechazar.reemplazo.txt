@@ -1,0 +1,192 @@
+// Reemplaza únicamente la función exports.aprobarORechazar existente en
+// src/modules/creditos/creditos.controller.js por esta implementación.
+// No reemplaces las funciones desembolsarCredito ni obtenerCreditoConCuotas.
+
+exports.aprobarORechazar = async (req, res) => {
+  let client;
+  let transaccionIniciada = false;
+
+  try {
+    const idSolicitud = Number(req.body.id_solicitud);
+    const decision = String(req.body.decision || '').trim().toUpperCase();
+    const motivo = String(req.body.motivo || '').trim();
+    const idUsuario = Number(req.usuario?.id_usuario);
+
+    if (!Number.isInteger(idSolicitud) || idSolicitud <= 0) {
+      return res.status(400).json({ error: 'Debe proporcionar un ID de solicitud válido.' });
+    }
+
+    if (!['APROBAR', 'RECHAZAR'].includes(decision)) {
+      return res.status(400).json({ error: 'La decisión debe ser APROBAR o RECHAZAR.' });
+    }
+
+    if (!Number.isInteger(idUsuario) || idUsuario <= 0) {
+      return res.status(401).json({ error: 'No se pudo identificar al usuario autenticado.' });
+    }
+
+    if (decision === 'RECHAZAR' && !motivo) {
+      return res.status(400).json({ error: 'El motivo es obligatorio para rechazar la solicitud.' });
+    }
+
+    client = await db.getClient();
+    await client.query('BEGIN');
+    transaccionIniciada = true;
+
+    // Bloqueo de la solicitud para impedir decisiones simultáneas.
+    const solRes = await client.query(
+      `SELECT
+         s.*,
+         e.id_evaluacion,
+         e.resultado AS resultado_evaluacion,
+         e.capacidad_pago
+       FROM public.solicitud_credito s
+       LEFT JOIN public.evaluacion_credito e
+         ON e.id_solicitud = s.id_solicitud
+       WHERE s.id_solicitud = $1
+       FOR UPDATE OF s`,
+      [idSolicitud]
+    );
+
+    if (solRes.rowCount === 0) {
+      const error = new Error('La solicitud no existe.');
+      error.status = 404;
+      throw error;
+    }
+
+    const solicitud = solRes.rows[0];
+
+    if (solicitud.estado !== 'EN_EVALUACION') {
+      const error = new Error(`La solicitud no está disponible para decisión. Estado actual: ${solicitud.estado}.`);
+      error.status = 409;
+      throw error;
+    }
+
+    if (!solicitud.id_evaluacion || !solicitud.resultado_evaluacion) {
+      const error = new Error('No se puede decidir una solicitud sin una evaluación registrada.');
+      error.status = 409;
+      throw error;
+    }
+
+    if (decision === 'RECHAZAR') {
+      await client.query(
+        `UPDATE public.solicitud_credito
+         SET estado = 'RECHAZADA'
+         WHERE id_solicitud = $1`,
+        [idSolicitud]
+      );
+
+      // No existe una columna motivo_rechazo en el esquema actual;
+      // se conserva el motivo en el campo de auditoría disponible.
+      await client.query(
+        `INSERT INTO public.auditoria
+          (id_usuario, operacion, entidad, id_entidad, resultado)
+         VALUES ($1, 'RECHAZAR_SOLICITUD', 'SOLICITUD_CREDITO', $2, $3)`,
+        [idUsuario, idSolicitud, motivo.slice(0, 500)]
+      );
+
+      await client.query('COMMIT');
+      transaccionIniciada = false;
+
+      return res.json({
+        mensaje: 'Solicitud rechazada correctamente.',
+        id_solicitud: idSolicitud,
+        estado: 'RECHAZADA',
+        motivo,
+      });
+    }
+
+    // RN03: solo se aprueban evaluaciones favorables.
+    if (solicitud.resultado_evaluacion !== 'FAVORABLE') {
+      const error = new Error('No se puede aprobar una solicitud con evaluación DESFAVORABLE.');
+      error.status = 409;
+      throw error;
+    }
+
+    const tasaRaw = req.body.tasa_interes ?? solicitud.tasa_interes_anual;
+    const tasaFinal = Number(tasaRaw);
+
+    if (!Number.isFinite(tasaFinal) || tasaFinal < 0) {
+      const error = new Error('La tasa de interés debe ser un número válido mayor o igual a cero.');
+      error.status = 400;
+      throw error;
+    }
+
+    const existente = await client.query(
+      'SELECT id_credito FROM public.credito WHERE id_solicitud = $1',
+      [idSolicitud]
+    );
+
+    if (existente.rowCount > 0) {
+      const error = new Error('La solicitud ya tiene un crédito asociado.');
+      error.status = 409;
+      throw error;
+    }
+
+    const numeroCredito = `CR-${new Date().getFullYear()}-${String(idSolicitud).padStart(6, '0')}`;
+
+    const credRes = await client.query(
+      `INSERT INTO public.credito (
+        id_solicitud,
+        numero_credito,
+        monto_aprobado,
+        tasa_interes,
+        plazo_meses,
+        saldo_capital,
+        estado
+      ) VALUES ($1, $2, $3, $4, $5, $3, 'APROBADO')
+      RETURNING *`,
+      [
+        idSolicitud,
+        numeroCredito,
+        solicitud.monto_solicitado,
+        tasaFinal,
+        solicitud.plazo_meses,
+      ]
+    );
+
+    await client.query(
+      `UPDATE public.solicitud_credito
+       SET estado = 'APROBADA'
+       WHERE id_solicitud = $1`,
+      [idSolicitud]
+    );
+
+    await client.query(
+      `INSERT INTO public.auditoria
+        (id_usuario, operacion, entidad, id_entidad, resultado)
+       VALUES ($1, 'APROBAR_SOLICITUD', 'CREDITO', $2, 'EXITO')`,
+      [idUsuario, credRes.rows[0].id_credito]
+    );
+
+    await client.query('COMMIT');
+    transaccionIniciada = false;
+
+    return res.json({
+      mensaje: 'Crédito aprobado correctamente. La formalización y el desembolso son pasos posteriores.',
+      credito: credRes.rows[0],
+      resultado_evaluacion: solicitud.resultado_evaluacion,
+    });
+  } catch (error) {
+    if (client && transaccionIniciada) {
+      await client.query('ROLLBACK').catch(() => {});
+      transaccionIniciada = false;
+    }
+
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'Ya existe un crédito para esta solicitud o el número generado está duplicado.' });
+    }
+
+    if (error.code === '23503') {
+      return res.status(400).json({ error: 'La operación hace referencia a un registro que no existe.' });
+    }
+
+    console.error('Error al aprobar/rechazar solicitud:', error);
+    return res.status(500).json({ error: 'No fue posible procesar la decisión de crédito.' });
+  } finally {
+    if (client) client.release();
+  }
+};

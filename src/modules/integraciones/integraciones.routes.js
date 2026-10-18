@@ -1,11 +1,22 @@
 const express = require('express');
 const router = express.Router();
 const integracionesController = require('./integraciones.controller');
+const { verificarToken, verificarRol } = require('../../middlewares/auth');
 
-// CU03: Endpoint para consultar el historial crediticio externo
-router.get('/riesgo/:ci', integracionesController.consultarRiesgoCrediticio);
+// La consulta de riesgo es una simulación; requiere usuario autenticado.
+router.get(
+  '/riesgo/:ci',
+  verificarToken,
+  verificarRol(['ADMIN', 'ANALISTA']),
+  integracionesController.consultarRiesgoCrediticio
+);
 
-// CU11: Endpoint para solicitar desembolso al Core Bancario
-router.post('/core/desembolsar', integracionesController.procesarDesembolsoCore);
+// API Core de demostración, protegida y explícitamente no monetaria.
+router.post(
+  '/core/desembolsar',
+  verificarToken,
+  verificarRol(['ADMIN', 'OFICIAL']),
+  integracionesController.procesarDesembolsoCore
+);
 
 module.exports = router;

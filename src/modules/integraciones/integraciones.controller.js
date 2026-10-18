@@ -1,92 +1,74 @@
-// ============================================================================
-// MÓDULO DE INTEGRACIONES EXTERNAS (CU03 - Riesgo / CU11 - Core Bancario)
-// ============================================================================
+const crypto = require('crypto');
 
-// CU03: Consultar Historial Crediticio en el Sistema de Riesgo Crediticio
+// CU03: Simulación académica de consulta de riesgo.
+// No consulta Infocred ni ASFI y no debe presentarse como un informe real.
 const consultarRiesgoCrediticio = async (req, res) => {
   try {
-    const { ci } = req.params;
-
-    if (!ci) {
-      return res.status(400).json({ error: 'La Cédula de Identidad (CI) es obligatoria' });
-    }
-
-    // Algoritmo determinista de simulación de Central de Riesgo Externa
-    // Genera resultados consistentes basados en el último dígito del CI
-    const ultimoDigito = parseInt(ci.slice(-1)) || 0;
-    
-    // Cálculo simulado de Score y Clasificación de Riesgo
-    let score = 750 - (ultimoDigito * 25); // Score entre 525 y 750
+    const ci = String(req.params.ci || '').trim();
+    if (!ci) return res.status(400).json({ error: 'La cédula de identidad (CI) es obligatoria.' });
+    const ultimoDigito = Number.parseInt(ci.slice(-1), 10) || 0;
+    const score = 750 - ultimoDigito * 25;
     let nivelRiesgo = 'BAJO';
     let dictamenRecomendado = 'FAVORABLE';
     let deudasActuales = 0;
-
     if (score < 600) {
       nivelRiesgo = 'ALTO';
       dictamenRecomendado = 'DESFAVORABLE';
-      deudasActuales = 15000.00;
+      deudasActuales = 15000;
     } else if (score < 680) {
       nivelRiesgo = 'MEDIO';
       dictamenRecomendado = 'FAVORABLE_CON_CONDICION';
-      deudasActuales = 4500.00;
+      deudasActuales = 4500;
     }
-
-    const referenciaExterna = `REF-INFOCRED-${Date.now()}-${ci.slice(-4)}`;
-
-    // Respuesta con el contrato de datos especificado en CU03
+    const referenciaExterna = `SIM-RIESGO-${Date.now().toString(36).toUpperCase()}`;
     return res.json({
       exito: true,
-      proveedor: 'Central de Información Crediticia (Infocred / ASFI)',
+      modo: 'SIMULACION',
+      aviso: 'SIMULACIÓN ACADÉMICA: esta respuesta no proviene de Infocred, ASFI ni de una central real.',
+      proveedor: 'Proveedor de prueba local',
       referencia_consulta: referenciaExterna,
       fecha_consulta: new Date().toISOString(),
       cliente: {
-        ci: ci,
+        ci,
         score_crediticio: score,
         nivel_riesgo: nivelRiesgo,
         deudas_sistema_financiero: deudasActuales,
-        calificacion_entidades: score > 650 ? 'A - Excelente' : 'C - Riesgo Moderado',
-        dictamen_recomendado: dictamenRecomendado
-      }
+        calificacion_entidades: score > 650 ? 'A - Simulada' : 'C - Simulada',
+        dictamen_recomendado: dictamenRecomendado,
+      },
     });
-
   } catch (error) {
-    console.error('Error al consultar Sistema de Riesgo Crediticio:', error);
-    res.status(500).json({ 
-      error: 'Error al comunicarse con el Sistema de Riesgo Crediticio Externo',
-      detalle: error.message 
-    });
+    console.error('Error en simulación de riesgo:', error);
+    return res.status(500).json({ error: 'No fue posible ejecutar la simulación de riesgo.' });
   }
 };
 
-// CU11: Solicitud de Desembolso al Sistema Bancario Core
+// CU11: API simulada del Core bancario. Nunca inicia transferencias ni mueve dinero.
 const procesarDesembolsoCore = async (req, res) => {
   try {
-    const { id_credito, numero_cuenta, monto } = req.body;
-
-    if (!id_credito || !monto) {
-      return res.status(400).json({ error: 'Parámetros insuficientes para procesar desembolso en el Core' });
+    const idCredito = Number(req.body?.id_credito);
+    const monto = Number(req.body?.monto);
+    const numeroCuenta = String(req.body?.numero_cuenta || '').trim().slice(0, 100) || 'CUENTA-DEMO-NO-OPERATIVA';
+    if (!Number.isInteger(idCredito) || idCredito <= 0 || !Number.isFinite(monto) || monto <= 0) {
+      return res.status(400).json({ error: 'Debe proporcionar un crédito y monto válidos para simular el Core.' });
     }
-
-    // Simulación del procesamiento de la transferencia en el Core Bancario
-    const transaccionCore = `TX-CORE-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
+    const suffix = `${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+    const transaccionCore = `SIM-CORE-${suffix}`;
     return res.json({
       exito: true,
-      mensaje: 'Operación de desembolso procesada correctamente en el Core Bancario',
+      modo: 'SIMULACION',
+      movimiento_real_ejecutado: false,
+      mensaje: 'Respuesta simulada del Core recibida. No se ejecutó una transferencia real.',
       codigo_transaccion_core: transaccionCore,
-      id_credito: id_credito,
-      monto_desembolsado: monto,
-      cuenta_destino: numero_cuenta || 'CUENTA-MONEDERO-BANCO',
-      fecha_procesamiento: new Date().toISOString()
+      id_credito: idCredito,
+      monto_desembolsado_simulado: Number(monto.toFixed(2)),
+      cuenta_destino: numeroCuenta,
+      fecha_procesamiento: new Date().toISOString(),
     });
-
   } catch (error) {
-    console.error('Error al comunicarse con el Core Bancario:', error);
-    res.status(500).json({ error: 'Error en la interfaz del Core Bancario' });
+    console.error('Error en simulación de Core:', error);
+    return res.status(500).json({ error: 'No fue posible ejecutar la simulación del Core bancario.' });
   }
 };
 
-module.exports = {
-  consultarRiesgoCrediticio,
-  procesarDesembolsoCore
-};
+module.exports = { consultarRiesgoCrediticio, procesarDesembolsoCore };

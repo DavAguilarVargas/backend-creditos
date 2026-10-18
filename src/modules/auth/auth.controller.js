@@ -32,7 +32,7 @@ exports.login = async (req, res) => {
         rol: usuario.rol,
         nombre: usuario.nombre_completo 
       },
-      process.env.JWT_SECRET || 'secreto_desarrollo',
+      process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
 
@@ -47,20 +47,6 @@ exports.login = async (req, res) => {
       }
     });
 
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-// 2. Generador temporal de contraseñas
-exports.crearSemilla = async (req, res) => {
-  try {
-    const hash = await bcrypt.hash('admin123', 10);
-    await db.query('UPDATE usuario SET clave_hash = $1', [hash]);
-    res.json({ 
-      mensaje: 'Contraseñas de todos los usuarios actualizadas a: admin123', 
-      hashGenerado: hash 
-    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
